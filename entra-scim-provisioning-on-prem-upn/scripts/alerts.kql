@@ -1,0 +1,25 @@
+// Provisioning and audit logs are sent to Log Analytics with an Entra diagnostic setting
+// (ProvisioningLogs and AuditLogs). Every provisioning app in the tenant writes to the same tables,
+// so each query filters on the app's name. Logs arrive about 15 minutes after the event, and a cycle
+// with nothing to change writes no provisioning log at all.
+
+// 1. What happened to each user
+AADProvisioningLogs
+| where ServicePrincipal has "Netskope Rwanda Corporation"
+| extend User = tostring(parse_json(SourceIdentity).details.DisplayName)
+| project TimeGenerated, User, Action, ResultType, ResultSignature
+| order by TimeGenerated desc
+
+// 2. Alert: any failed provisioning event
+// Table rows, Count, granularity 30 minutes, Greater than 0, evaluated every 15 minutes, severity 2.
+AADProvisioningLogs
+| where ServicePrincipal has "Netskope Rwanda Corporation"
+| where ResultType == "Failure"
+
+// 3. Alert: the job has gone quiet (quarantined, paused or disabled)
+// A running job logs "Started new iteration" every 20-40 minutes.
+// Table rows, Count, granularity 2 hours, Less than 1, evaluated every hour, severity 1.
+AuditLogs
+| where TimeGenerated > ago(2h)
+| where Category == "ProvisioningManagement"
+| where ResultDescription has "Started new iteration" and ResultDescription has "Netskope Rwanda Corporation"
